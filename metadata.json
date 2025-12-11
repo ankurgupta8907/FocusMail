@@ -1,0 +1,5 @@
+{
+  "name": "FocusMail",
+  "description": "An AI-powered Gmail client that intelligently classifies your unread emails into Personal and Non-Personal categories, learning from your interactions to improve over time.",
+  "requestFramePermissions": []
+}
