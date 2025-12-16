@@ -3,7 +3,7 @@ import { Credentials, EmailData, ClassificationCategory, TokenResponse, TokenCli
 import ApiKeyModal from './components/ApiKeyModal';
 import EmailCard from './components/EmailCard';
 import ReplyModal from './components/ReplyModal';
-import { fetchUnreadEmails, sendReply, getMockEmails, markEmailsAsRead } from './services/gmailService';
+import { fetchUnreadEmails, sendReply, getMockEmails, markEmailsAsRead, getUserProfile } from './services/gmailService';
 import { classifyEmail, saveTrainingExample, getStoredTrainingData, deleteTrainingExample } from './services/geminiService';
 
 const CREDENTIALS_KEY = 'focusmail_credentials';
@@ -42,6 +42,7 @@ export const App: React.FC = () => {
     }
   });
 
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [activeTab, setActiveTab] = useState<'inbox' | 'reclassifications'>('inbox');
   
@@ -53,12 +54,16 @@ export const App: React.FC = () => {
   // Reply Modal State
   const [replyingTo, setReplyingTo] = useState<EmailData | null>(null);
 
+  // Get current active User ID for storage (Email for logged in, 'demo' for demo)
+  const currentUserId = isDemoMode ? 'demo' : (userEmail || 'unknown');
+
   // Initialize Google Token Client
   useEffect(() => {
     if (credentials && window.google) {
       const client = window.google.accounts.oauth2.initTokenClient({
         client_id: credentials.googleClientId,
-        scope: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify',
+        // Added userinfo.email scope to fetch user identity for data isolation
+        scope: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/userinfo.email',
         callback: (tokenResponse: TokenResponse) => {
           if (tokenResponse.error) {
             console.error("Token Error", tokenResponse);
@@ -79,10 +84,32 @@ export const App: React.FC = () => {
     }
   }, [credentials]);
 
-  // Load training data when tab switches to memory or initial load
+  // Fetch User Profile when token is available
   useEffect(() => {
-    setTrainingData(getStoredTrainingData());
-  }, [activeTab]);
+    const fetchProfile = async () => {
+      if (accessToken && !isDemoMode) {
+        try {
+          const profile = await getUserProfile(accessToken);
+          setUserEmail(profile.email);
+        } catch (e) {
+          console.error("Could not fetch user profile", e);
+          // If we fail to get profile, we might be using an old token without the new scope.
+          // We can optionally force logout here, or just fall back. 
+          // For now, let's keep it robust and not crash.
+        }
+      } else if (isDemoMode) {
+        setUserEmail('demo@example.com');
+      }
+    };
+    fetchProfile();
+  }, [accessToken, isDemoMode]);
+
+  // Load training data when tab switches to memory or initial load, DEPENDENT on currentUserId
+  useEffect(() => {
+    if (currentUserId !== 'unknown') {
+      setTrainingData(getStoredTrainingData(currentUserId));
+    }
+  }, [activeTab, currentUserId]);
 
   // Fetch and Classify Emails
   const loadEmails = useCallback(async () => {
@@ -98,6 +125,7 @@ export const App: React.FC = () => {
     }
 
     if (!accessToken || !credentials) return;
+    if (!userEmail) return; // Wait for user profile to load for RAG context
 
     setIsLoading(true);
     setError(null);
@@ -114,10 +142,10 @@ export const App: React.FC = () => {
       // Set initial unclassified state to show UI immediately
       setEmails(fetchedEmails);
 
-      // Classify in parallel
+      // Classify in parallel, passing the userEmail for isolated RAG
       const classifiedEmails = await Promise.all(
         fetchedEmails.map(async (email) => {
-          const result = await classifyEmail(email, credentials.geminiApiKey);
+          const result = await classifyEmail(email, credentials.geminiApiKey, userEmail);
           return {
             ...email,
             classification: result.category,
@@ -141,14 +169,14 @@ export const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [accessToken, credentials, isDemoMode]);
+  }, [accessToken, credentials, isDemoMode, userEmail]);
 
   // Trigger load when access token is available or demo mode starts
   useEffect(() => {
-    if (accessToken || isDemoMode) {
+    if ((accessToken && userEmail) || isDemoMode) {
       loadEmails();
     }
-  }, [accessToken, loadEmails, isDemoMode]);
+  }, [accessToken, userEmail, loadEmails, isDemoMode]);
 
   const handleLogin = () => {
     if (tokenClient) {
@@ -159,6 +187,7 @@ export const App: React.FC = () => {
 
   const handleLogout = () => {
     setAccessToken(null);
+    setUserEmail(null);
     localStorage.removeItem(TOKEN_KEY);
     setEmails([]);
     setIsDemoMode(false);
@@ -184,11 +213,11 @@ export const App: React.FC = () => {
       };
     }));
 
-    // 2. "Learn" from this action
-    saveTrainingExample(email, newCategory);
+    // 2. "Learn" from this action, saved to isolated storage
+    saveTrainingExample(email, newCategory, currentUserId);
     
     // Refresh training data immediately
-    setTrainingData(getStoredTrainingData());
+    setTrainingData(getStoredTrainingData(currentUserId));
   };
 
   const handleReplySend = async (email: EmailData, body: string) => {
@@ -237,7 +266,7 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteTrainingExample = (timestamp: number) => {
-    deleteTrainingExample(timestamp);
+    deleteTrainingExample(timestamp, currentUserId);
     setTrainingData(prev => prev.filter(item => item.timestamp !== timestamp));
   };
 
@@ -251,7 +280,7 @@ export const App: React.FC = () => {
   const notPersonalEmails = emails.filter(e => e.classification === ClassificationCategory.NOT_PERSONAL || e.classification === ClassificationCategory.UNCLASSIFIED);
   
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-200 font-sans">
+    <div className="min-h-screen bg-zinc-950 text-zinc-200 font-sans flex flex-col">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800 p-4">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
@@ -290,6 +319,13 @@ export const App: React.FC = () => {
           )}
 
           <div className="flex items-center gap-4">
+            {/* Show current user email if logged in */}
+            {!isDemoMode && userEmail && (
+              <span className="hidden md:block text-xs text-zinc-500">
+                {userEmail}
+              </span>
+            )}
+
             {/* Settings Button */}
             <button 
               onClick={() => setShowSettings(true)}
@@ -333,7 +369,7 @@ export const App: React.FC = () => {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto p-4 md:p-6">
+      <main className="max-w-7xl mx-auto p-4 md:p-6 flex-1 w-full">
         {error && (
           <div className="bg-red-900/20 border border-red-900/50 text-red-300 p-4 rounded-lg mb-6 text-sm flex justify-between items-center">
             <span>{error}</span>
@@ -470,7 +506,9 @@ export const App: React.FC = () => {
                  <div className="flex justify-between items-end mb-6">
                     <div>
                         <h2 className="text-xl font-bold">Reclassifications</h2>
-                        <p className="text-zinc-400 text-sm mt-1">The AI uses these past reclassifications to learn.</p>
+                        <p className="text-zinc-400 text-sm mt-1">
+                          {isDemoMode ? "Demo Mode" : `Rules for ${userEmail || 'current user'}`}: The AI uses these to learn your preferences.
+                        </p>
                     </div>
                     <div className="text-xs text-zinc-500">
                         {trainingData.length} rules stored
@@ -526,6 +564,13 @@ export const App: React.FC = () => {
           </>
         )}
       </main>
+
+      <footer className="max-w-7xl mx-auto p-6 text-center text-zinc-500 text-xs w-full border-t border-zinc-900 mt-auto">
+        <p>
+          Built with <a href="https://github.com/ankurgupta8907/FocusMail" target="_blank" rel="noreferrer" className="underline hover:text-zinc-300">Open Source</a> code. 
+          Hosted on <a href="https://focusmail-254167712880.us-west1.run.app/" target="_blank" rel="noreferrer" className="underline hover:text-zinc-300">Google Cloud Run</a>.
+        </p>
+      </footer>
 
       {/* Settings / API Key Modal */}
       {showSettings && (

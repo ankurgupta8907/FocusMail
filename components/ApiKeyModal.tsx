@@ -13,6 +13,7 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ onSave, onClose, onDemo, init
   const [apiKey, setApiKey] = useState('');
   const [origin, setOrigin] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
 
   useEffect(() => {
     if (initialCredentials) {
@@ -68,41 +69,55 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ onSave, onClose, onDemo, init
         )}
 
         <h2 className="text-xl font-bold text-white mb-2">Configuration</h2>
-        <p className="text-zinc-400 text-sm mb-6">
-          Enter your API credentials to run the app. These are saved locally to your browser so you don't have to re-enter them on refresh.
+        <p className="text-zinc-400 text-sm mb-4">
+          Enter your API credentials to run the app. These are saved locally to your browser.
         </p>
 
-        {/* Origin Helper for OAuth Error 400 */}
-        <div className="bg-zinc-800/50 p-4 rounded-lg border border-yellow-700/30 mb-4">
-           <div className="flex items-start gap-2 mb-2">
-             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5">
-               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
-             </svg>
-             <h3 className="font-semibold text-yellow-500 text-sm">Deployment Setup (Error 400)</h3>
-           </div>
-           <p className="text-xs text-zinc-400 mb-3 leading-relaxed">
-             Add this URL to <strong>Authorized JavaScript origins</strong> in Google Cloud Console.
-           </p>
-           
-           <div className="relative group mb-2">
-             <code className="block bg-black/40 p-2.5 rounded text-blue-300 text-xs font-mono break-all border border-zinc-700/50 select-all">
-               {origin}
-             </code>
-           </div>
-        </div>
+        <button 
+          type="button"
+          onClick={() => setShowHelp(!showHelp)}
+          className="text-blue-400 hover:text-blue-300 text-sm font-medium mb-4 flex items-center gap-1 transition-colors"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z" />
+          </svg>
+          {showHelp ? "Hide Instructions" : "How do I get these?"}
+        </button>
 
-        {/* Test User Helper for OAuth Error 403 */}
-        <div className="bg-zinc-800/50 p-4 rounded-lg border border-blue-900/30 mb-6">
-           <div className="flex items-start gap-2 mb-2">
-             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-blue-400 shrink-0 mt-0.5">
-               <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
-             </svg>
-             <h3 className="font-semibold text-blue-400 text-sm">Access Denied (Error 403)</h3>
-           </div>
-           <p className="text-xs text-zinc-400 leading-relaxed">
-             While in "Testing" mode, you must explicitly add your email to the <strong>Test Users</strong> list in the <a href="https://console.cloud.google.com/apis/credentials/consent" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline hover:text-blue-300">OAuth Consent Screen</a>.
-           </p>
-        </div>
+        {showHelp && (
+          <div className="bg-zinc-800/50 p-4 rounded-lg border border-zinc-700 mb-6 text-sm text-zinc-300 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div>
+              <h3 className="font-semibold text-white mb-1">1. Google Cloud Client ID</h3>
+              <ol className="list-decimal pl-4 space-y-1 text-xs text-zinc-400">
+                <li>Go to <a href="https://console.cloud.google.com/" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">Google Cloud Console</a>.</li>
+                <li>Create a project and enable the <strong>Gmail API</strong>.</li>
+                <li>Go to <strong>Credentials</strong> → <strong>Create Credentials</strong> → <strong>OAuth client ID</strong>.</li>
+                <li>Select <strong>Web application</strong>.</li>
+                <li>Add <code className="bg-black/30 px-1 rounded text-blue-200">{origin}</code> to <strong>Authorized JavaScript origins</strong>.</li>
+                <li>Copy the Client ID ending in <code className="text-zinc-500">.apps.googleusercontent.com</code>.</li>
+              </ol>
+            </div>
+            
+            <div>
+              <h3 className="font-semibold text-white mb-1">2. Important: Test Users</h3>
+              <p className="text-xs text-zinc-400 mb-1">Since your app is not verified by Google, you must manually allow your email.</p>
+              <ol className="list-decimal pl-4 space-y-1 text-xs text-zinc-400">
+                <li>Go to <strong>OAuth consent screen</strong> in Google Cloud Console.</li>
+                <li>Ensure Publishing Status is <strong>Testing</strong>.</li>
+                <li>Under <strong>Test users</strong>, click <strong>Add Users</strong> and enter your Gmail address.</li>
+                <li><em>Without this, you will get an "Access Denied" (403) error.</em></li>
+              </ol>
+            </div>
+
+            <div>
+              <h3 className="font-semibold text-white mb-1">3. Gemini API Key</h3>
+              <ol className="list-decimal pl-4 space-y-1 text-xs text-zinc-400">
+                <li>Go to <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">Google AI Studio</a>.</li>
+                <li>Click <strong>Get API key</strong> and copy it.</li>
+              </ol>
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

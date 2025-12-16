@@ -85,6 +85,19 @@ const extractContent = (payload: any): { text: string, html: string } => {
   return { text, html };
 };
 
+export const getUserProfile = async (accessToken: string): Promise<{ email: string; name: string }> => {
+  try {
+    const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) throw new Error('Failed to fetch user profile');
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching user profile", error);
+    throw error;
+  }
+};
+
 export const fetchUnreadEmails = async (accessToken: string, limit: number = 10): Promise<EmailData[]> => {
   try {
     // 1. List messages - Filter for Primary category

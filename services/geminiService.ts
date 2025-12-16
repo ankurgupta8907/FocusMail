@@ -1,12 +1,13 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { EmailData, ClassificationCategory, TrainingExample } from '../types';
 
-const STORAGE_KEY = 'focusmail_training_data';
+// Helper to generate a namespaced key
+const getStorageKey = (userId: string) => `focusmail_training_data_${userId}`;
 
 // Helper to get training data
-export const getStoredTrainingData = (): TrainingExample[] => {
+export const getStoredTrainingData = (userId: string): TrainingExample[] => {
   try {
-    const data = localStorage.getItem(STORAGE_KEY);
+    const data = localStorage.getItem(getStorageKey(userId));
     return data ? JSON.parse(data) : [];
   } catch (e) {
     return [];
@@ -14,8 +15,8 @@ export const getStoredTrainingData = (): TrainingExample[] => {
 };
 
 // Helper to save training data
-export const saveTrainingExample = (email: EmailData, correctCategory: ClassificationCategory) => {
-  const currentHistory = getStoredTrainingData();
+export const saveTrainingExample = (email: EmailData, correctCategory: ClassificationCategory, userId: string) => {
+  const currentHistory = getStoredTrainingData(userId);
   const newExample: TrainingExample = {
     subject: email.subject,
     sender: email.sender,
@@ -29,15 +30,15 @@ export const saveTrainingExample = (email: EmailData, correctCategory: Classific
     !(h.subject === newExample.subject && h.sender === newExample.sender)
   );
 
-  // Truncate to 100 most recent items as requested
+  // Truncate to 100 most recent items
   const updatedHistory = [newExample, ...uniqueHistory].slice(0, 100);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedHistory));
+  localStorage.setItem(getStorageKey(userId), JSON.stringify(updatedHistory));
 };
 
-export const deleteTrainingExample = (timestamp: number) => {
-  const currentHistory = getStoredTrainingData();
+export const deleteTrainingExample = (timestamp: number, userId: string) => {
+  const currentHistory = getStoredTrainingData(userId);
   const updatedHistory = currentHistory.filter(item => item.timestamp !== timestamp);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedHistory));
+  localStorage.setItem(getStorageKey(userId), JSON.stringify(updatedHistory));
 };
 
 // --- SIMPLIFIED RAG IMPLEMENTATION ---
@@ -72,7 +73,8 @@ const getRelevantExamples = (email: EmailData, history: TrainingExample[], limit
 
 export const classifyEmail = async (
   email: EmailData, 
-  apiKey: string
+  apiKey: string,
+  userId: string
 ): Promise<{ 
   category: ClassificationCategory; 
   reasoning: string;
@@ -80,7 +82,8 @@ export const classifyEmail = async (
 }> => {
   
   const ai = new GoogleGenAI({ apiKey });
-  const allHistory = getStoredTrainingData();
+  // Pass the userId to ensure we only look at relevant history
+  const allHistory = getStoredTrainingData(userId);
   
   // RAG: Fetch only the most relevant examples for THIS specific email (Same Sender)
   const relevantExamples = getRelevantExamples(email, allHistory, 5); 
